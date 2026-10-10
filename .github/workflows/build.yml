@@ -36,13 +36,25 @@ jobs:
       - name: Extract Nyra source ZIP
         shell: bash
         run: |
-          ZIP="NYRA_1_20_1_source_visual_forms_v5.zip"
-          if [ ! -f "$ZIP" ]; then
-            echo "ERROR: Source ZIP not found at repository root: $ZIP"
+          # Prefer the newest archive, but allow earlier versions if needed.
+          ZIP=""
+          for candidate in \
+            NYRA_1_20_1_source_visual_forms_v6.zip \
+            NYRA_1_20_1_source_visual_forms_v5.zip; do
+            if [ -f "$candidate" ]; then
+              ZIP="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No supported Nyra source ZIP found at repository root."
+            echo "Expected one of: NYRA_1_20_1_source_visual_forms_v6.zip, NYRA_1_20_1_source_visual_forms_v5.zip"
             echo "Repository files:"
             ls -la
             exit 1
           fi
+          echo "Using source archive: $ZIP"
 
           mkdir -p extracted
           unzip -q -o "$ZIP" -d extracted
@@ -72,3 +84,4 @@ jobs:
           path: extracted/nyra/build/libs/*.jar
           if-no-files-found: warn
           retention-days: 14
+          
