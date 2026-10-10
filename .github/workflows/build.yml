@@ -36,11 +36,13 @@ jobs:
       - name: Extract Nyra source ZIP
         shell: bash
         run: |
-          # Prefer the newest archive, but allow earlier versions if needed.
+          # Accept GitHub's duplicate-upload suffixes such as v6-1.zip.
           ZIP=""
           for candidate in \
             NYRA_1_20_1_source_visual_forms_v6.zip \
-            NYRA_1_20_1_source_visual_forms_v5.zip; do
+            NYRA_1_20_1_source_visual_forms_v6-*.zip \
+            NYRA_1_20_1_source_visual_forms_v5.zip \
+            NYRA_1_20_1_source_visual_forms_v5-*.zip; do
             if [ -f "$candidate" ]; then
               ZIP="$candidate"
               break
@@ -49,7 +51,7 @@ jobs:
 
           if [ -z "$ZIP" ]; then
             echo "ERROR: No supported Nyra source ZIP found at repository root."
-            echo "Expected one of: NYRA_1_20_1_source_visual_forms_v6.zip, NYRA_1_20_1_source_visual_forms_v5.zip"
+            echo "Expected V6/V5 source ZIP (a suffix like -1 is also accepted)."
             echo "Repository files:"
             ls -la
             exit 1
