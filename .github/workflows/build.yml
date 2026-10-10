@@ -25,64 +25,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Locate Gradle project
+      - name: Install Gradle 8.7
         shell: bash
         run: |
-          if [ -f settings.gradle ] || [ -f settings.gradle.kts ] || \
-             [ -f build.gradle ] || [ -f build.gradle.kts ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-          else
-            PROJECT_DIR=""
-            while IFS= read -r file; do
-              PROJECT_DIR="${file%/*}"
-              break
-            done < <(
-              find . -mindepth 2 -maxdepth 5 -type f \
-                \( -name settings.gradle \
-                -o -name settings.gradle.kts \) \
-                -not -path '*/.gradle/*' \
-                -not -path '*/build/*' | sort
-            )
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
+          sudo mkdir -p /opt/gradle
+          sudo unzip -q /tmp/gradle.zip -d /opt/gradle
+          echo "/opt/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
 
-            if [ -z "$PROJECT_DIR" ]; then
-              while IFS= read -r file; do
-                PROJECT_DIR="${file%/*}"
-                break
-              done < <(
-                find . -mindepth 2 -maxdepth 5 -type f \
-                  \( -name build.gradle \
-                  -o -name build.gradle.kts \) \
-                  -not -path '*/.gradle/*' \
-                  -not -path '*/build/*' | sort
-              )
-            fi
-
-            if [ -z "$PROJECT_DIR" ]; then
-              echo "ERROR: No Gradle project found."
-              exit 1
-            fi
-
-            echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          fi
-
-      - name: Build with Gradle
+      - name: Extract Nyra source ZIP
         shell: bash
         run: |
-          cd "$PROJECT_DIR"
-          echo "Building project in: $PWD"
-
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew build --no-daemon --stacktrace
-          else
-            gradle build --no-daemon --stacktrace
+          ZIP="NYRA_1_20_1_source_visual_forms_v5.zip"
+          if [ ! -f "$ZIP" ]; then
+            echo "ERROR: Source ZIP not found at repository root: $ZIP"
+            echo "Repository files:"
+            ls -la
+            exit 1
           fi
+
+          mkdir -p extracted
+          unzip -q -o "$ZIP" -d extracted
+
+          if [ ! -f extracted/nyra/settings.gradle ] && [ ! -f extracted/nyra/settings.gradle.kts ]; then
+            echo "ERROR: Gradle settings file not found at extracted/nyra. ZIP structure may have changed."
+            find extracted -maxdepth 5 -type f \( -name settings.gradle -o -name settings.gradle.kts -o -name build.gradle -o -name build.gradle.kts \)
+            exit 1
+          fi
+
+          if [ ! -f extracted/nyra/build.gradle ] && [ ! -f extracted/nyra/build.gradle.kts ]; then
+            echo "ERROR: Gradle build file not found at extracted/nyra."
+            exit 1
+          fi
+
+      - name: Build Nyra
+        shell: bash
+        run: |
+          cd extracted/nyra
+          gradle build --no-daemon --stacktrace
 
       - name: Upload JAR files
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nyra-build
-          path: '**/build/libs/*.jar'
+          path: extracted/nyra/build/libs/*.jar
           if-no-files-found: warn
           retention-days: 14
