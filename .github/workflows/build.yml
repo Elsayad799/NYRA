@@ -1,22 +1,17 @@
 name: Build Nyra
 
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    branches: [ "main", "master" ]
 
 jobs:
   build:
-    name: Build Fabric Mod
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -24,66 +19,50 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Install Gradle 8.7
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Locate and extract Nyra source archive
         shell: bash
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
-          sudo mkdir -p /opt/gradle
-          sudo unzip -q /tmp/gradle.zip -d /opt/gradle
-          echo "/opt/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
-
-      - name: Extract Nyra source ZIP
-        shell: bash
-        run: |
-          # Accept GitHub's duplicate-upload suffixes such as v6-1.zip.
-          ZIP=""
-          for candidate in \
-            NYRA_1_20_1_source_visual_forms_v6.zip \
-            NYRA_1_20_1_source_visual_forms_v6-*.zip \
-            NYRA_1_20_1_source_visual_forms_v5.zip \
-            NYRA_1_20_1_source_visual_forms_v5-*.zip; do
-            if [ -f "$candidate" ]; then
-              ZIP="$candidate"
-              break
-            fi
-          done
-
+          set -euo pipefail
+          ZIP="$(find . -maxdepth 1 -type f -name 'NYRA_1_20_1_source_visual_forms_v7*.zip' -printf '%f\n' | sort -V | tail -n 1)"
           if [ -z "$ZIP" ]; then
-            echo "ERROR: No supported Nyra source ZIP found at repository root."
-            echo "Expected V6/V5 source ZIP (a suffix like -1 is also accepted)."
-            echo "Repository files:"
+            echo 'ERROR: Upload NYRA_1_20_1_source_visual_forms_v7*.zip to repository root.'
             ls -la
             exit 1
           fi
-          echo "Using source archive: $ZIP"
-
           mkdir -p extracted
-          unzip -q -o "$ZIP" -d extracted
-
-          if [ ! -f extracted/nyra/settings.gradle ] && [ ! -f extracted/nyra/settings.gradle.kts ]; then
-            echo "ERROR: Gradle settings file not found at extracted/nyra. ZIP structure may have changed."
-            find extracted -maxdepth 5 -type f \( -name settings.gradle -o -name settings.gradle.kts -o -name build.gradle -o -name build.gradle.kts \)
-            exit 1
-          fi
-
-          if [ ! -f extracted/nyra/build.gradle ] && [ ! -f extracted/nyra/build.gradle.kts ]; then
-            echo "ERROR: Gradle build file not found at extracted/nyra."
-            exit 1
-          fi
+          unzip -q "$ZIP" -d extracted
+          PROJECT_DIR="$(find extracted -type f -name build.gradle -printf '%h\n' | head -n 1)"
+          if [ -z "$PROJECT_DIR" ]; then echo 'ERROR: build.gradle not found in source archive'; find extracted -maxdepth 3 -type f; exit 1; fi
+          echo "NYRA_PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Using source archive: $ZIP"
+          echo "Project directory: $PROJECT_DIR"
 
       - name: Build Nyra
+        run: gradle -p "$NYRA_PROJECT_DIR" build --no-daemon --stacktrace --console=plain
+
+      - name: Run Python Core tests (if present)
         shell: bash
         run: |
-          cd extracted/nyra
-          gradle build --no-daemon --stacktrace
+          set -euo pipefail
+          if [ -d "$NYRA_PROJECT_DIR/nyra_core" ]; then
+            shopt -s nullglob
+            tests=("$NYRA_PROJECT_DIR"/nyra_core/test_*.py)
+            for test in "${tests[@]}"; do python3 "$test"; done
+          fi
 
-      - name: Upload JAR files
-        if: always()
+      - name: Upload Nyra JARs
         uses: actions/upload-artifact@v4
         with:
-          name: nyra-build
-          path: extracted/nyra/build/libs/*.jar
-          if-no-files-found: warn
+          name: Nyra-jar
+          path: |
+            ${{ env.NYRA_PROJECT_DIR }}/build/libs/*.jar
+          if-no-files-found: error
           retention-days: 14
           
